@@ -1,0 +1,16 @@
+[package]
+name = "cordata-topcoat-pilot"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Does a screen descriptor survive the move from React to Topcoat? See NOTES.md."
+repository = "https://github.com/cordata-tech/topcoat-descriptor-pilot"
+publish = false
+
+[dependencies]
+topcoat = "0.6"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros"] }
+
+# Declared but unused so far — persistence is step two, and the promised
+# trade-offs question (NOTES.md Q4) cannot be answered before then.
+toasty = "0.10"
