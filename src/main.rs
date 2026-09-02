@@ -3,6 +3,7 @@
 //! See README.md for what this is testing and NOTES.md for what it found.
 
 mod descriptor;
+mod invoices;
 mod table;
 mod users;
 
@@ -35,6 +36,22 @@ async fn home() -> Result {
                     rows: users::rows(),
                 )
             </body>
+        </html>
+    }
+}
+
+// Screen two, hand-written — see src/invoices.rs. Not on the descriptor yet;
+// that refactor is the experiment.
+#[page("/invoices")]
+async fn invoices_list() -> Result {
+    view! {
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>"Invoices"</title>
+                topcoat::dev::script()
+            </head>
+            <body>invoices::invoices_page(rows: invoices::rows())</body>
         </html>
     }
 }

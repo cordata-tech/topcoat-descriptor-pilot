@@ -22,6 +22,7 @@ PORT="${PORT:-3000}"
 # Add a route here when a screen is added. Names become filenames.
 ROUTES=(
   "users:/"
+  "invoices:/invoices"
 )
 
 usage() { echo "usage: $0 {capture|check}" >&2; exit 2; }

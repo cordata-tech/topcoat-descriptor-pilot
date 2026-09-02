@@ -14,6 +14,12 @@ Rules for this file:
 
 Versions: `topcoat` 0.6.2, `toasty` 0.10.0, `rustc` 1.97.1, macOS arm64.
 
+**Who wrote what**, because the post depends on it: the scaffold, the
+hand-written `invoices` screen and the zero-diff harness were written by
+Claude under direction. The Q1 findings below are therefore *its* experience
+of the framework, not László's — the post must say so, or the refactor and
+the notes that come out of it have to be his. Do not blur this.
+
 ---
 
 ## Q0 — Does the descriptor survive the move to Rust?
@@ -27,7 +33,21 @@ accessor plus a closed `CellKind` enum. `view!` iterates it with an ordinary
 `for`, and `table.rs` never names a domain type. First screen renders
 server-side and correctly.
 
-**Untested and the real test:** the second screen. Nothing is proven until a
+**Screen two now exists, hand-written — `src/invoices.rs`.** Deliberately
+harder than `users`, which is all Text/Number/Date/Badge and would prove
+nothing. Invoices carries three things `CellKind` and `fn(&T) -> String`
+cannot currently express:
+
+1. a currency amount formatted for a locale — `4 850,00 Kč`, cs-CZ grouping
+   and decimal mark. **An `fn` pointer cannot capture a locale.**
+2. a column computed from two fields (`days_late`, rendered as `—` when zero)
+3. a cell that is a link, not text
+
+Baselines captured for both routes. **The refactor onto the descriptor is the
+experiment and has not been done.**
+
+**Untested and the real test:** whether that refactor reproduces
+`baseline/invoices.html` byte for byte, and leaves `users` untouched. Nothing is proven until a
 different descriptor is added and `users` renders byte-identically. Do not
 record a verdict here before then.
 
@@ -68,6 +88,27 @@ confidently wrong because a step upstream silently did not happen.
 
   Fixed by `T: 'static + Send + Sync`. Worth noting fairly: the compiler
   suggested exactly that, and the suggestion was correct.
+
+- **A `#[page]` function cannot share a name with a module in scope.** Naming
+  the invoices route `invoices()` alongside `mod invoices` produced **five**
+  errors, none of which says "rename the function":
+
+  ```
+  error[E0428]: the name `invoices` is defined multiple times
+  error[E0573]: expected type, found module `invoices`
+  error[E0425]: cannot find function `handler` in module `invoices`
+  error: the `Self` constructor can only be used with tuple or unit structs
+  error[E0277]: the trait bound `invoices: Page` is not satisfied
+  ```
+
+  The macro generates an item named after the function, so the collision is
+  real — but the diagnostics describe the *expansion*, not the cause. This is
+  the first thing found that a newcomer would lose time to. Renaming to
+  `invoices_list` fixed it instantly.
+
+- **Worked first attempt, worth recording as well as the friction:** `if/else`
+  inline in `view!` for the computed column, `format!` inside an `href`
+  attribute, and Czech text through the whole path without an encoding step.
 
 - **Untested:** `topcoat ui`, `topcoat fmt`, the CLI generally. Not installed.
 
