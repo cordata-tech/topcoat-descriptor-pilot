@@ -37,6 +37,25 @@ check, a locale, a formatter — this becomes `Box<dyn Fn>` and the descriptor
 stops being `const` data. That moment is the finding, not a detour. Write down
 what forced it.
 
+## The zero-diff harness
+
+`scripts/zero-diff.sh capture` before a refactor, `check` after. Because
+Topcoat renders on the server, the zero-diff claim is a text comparison rather
+than an eyeballed visual one — `diff` returns nothing or the abstraction is
+wrong. That is a real advantage of this version of the experiment over the
+React original, and worth saying in the post.
+
+**The harness lied once before it was trusted, which is the point of proving a
+test discriminates rather than assuming it.** Perturbing a column header
+correctly produced `CHANGED` (exit 1). Reverting it with `mv` then *still*
+produced `CHANGED` — because `mv` restores the original mtime, leaving the
+source older than the compiled binary, so cargo skipped the rebuild and the
+server kept serving the previous build. Nothing reported a skipped rebuild.
+`touch` fixed it; the script now forces it every run, which costs ~1.4s.
+
+Same shape as the traps this project exists to write about: a check that is
+confidently wrong because a step upstream silently did not happen.
+
 ## Q1 — Developer experience end to end
 
 - **`#[component]` requires the returned future to be `Send`.** A generic
