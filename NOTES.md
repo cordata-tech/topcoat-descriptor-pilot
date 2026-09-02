@@ -46,8 +46,57 @@ cannot currently express:
 Baselines captured for both routes. **The refactor onto the descriptor is the
 experiment and has not been done.**
 
-**Untested and the real test:** whether that refactor reproduces
-`baseline/invoices.html` byte for byte, and leaves `users` untouched. Nothing is proven until a
+### Result of the zero-diff test — attempt 1, nothing in the framework changed
+
+```
+ZERO DIFF  users     (/)
+CHANGED    invoices  (/invoices)   — one column
+```
+
+**`users` is byte-identical.** Adding a second screen did not move the first.
+The one-way dependency held: `table.rs` still names no domain type.
+
+**`invoices` reproduced five of its six columns exactly**, including the two
+expected to break it:
+
+- the **locale-formatted currency** (`4 850,00 Kč`) survived — but only
+  because cs-CZ is hardcoded inside `koruna`, so the closure captures nothing
+  and coerces to `fn`. Make the locale a parameter and it stops compiling.
+  The constraint is real, it just was not exercised yet.
+- the **computed column** (`days_late` → `5 days` / `—`) survived outright.
+
+**Exactly one thing failed: the link cell.**
+
+```
+- <td class="cell cell-text"><a href="/invoices/2026-0041">2026-0041</a></td>
++ <td class="cell cell-text">&lt;a href="/invoices/2026-0041"&gt;2026-0041&lt;/a&gt;</td>
+```
+
+`view!` escapes an interpolated `String`, so returning markup from an accessor
+renders as visible text. **That is correct framework behaviour** — it is the
+XSS defence — not a bug to route around.
+
+### What this actually says, which is not "the abstraction failed"
+
+The boundary held for every cell that is a **value** and broke at the first
+cell that is **structure**. `fn(&T) -> String` can express anything you can
+compute; it cannot express anything you can nest.
+
+Fixing it means adding a variant to `CellKind` and a branch in `table.rs` —
+a change to the *framework* side, not the domain side. **That is the one-way
+dependency working as designed**, not failing: a domain cannot smuggle in new
+presentation, so a new cell shape is a deliberate, single, framework-wide
+decision.
+
+Worth stating plainly in the post, because it inverts the React result. There
+a `ColumnDef` held a render function, so any domain could return arbitrary
+JSX — more flexible, and **no boundary at all**. The Rust version has the
+stricter boundary; the price is that new presentation costs a framework
+change, and the benefit is that the framework knows every shape a cell can
+take. Which of those you want is the actual decision, and it is not obvious.
+
+**Next:** add `CellKind::Link` with an href accessor, re-run, and confirm the
+diff goes to zero without `table.rs` learning any domain type. Nothing is proven until a
 different descriptor is added and `users` renders byte-identically. Do not
 record a verdict here before then.
 

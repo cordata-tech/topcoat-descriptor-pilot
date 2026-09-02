@@ -1,24 +1,9 @@
-//! Screen two, written BY HAND on purpose.
+//! Screen two, now declared as a descriptor.
 //!
-//! This is the "screen you already trust" half of the zero-diff test. It is
-//! deliberately NOT built on the descriptor: the point is to write the markup
-//! we actually want, capture it, and then see whether the skeleton can
-//! reproduce it byte for byte.
-//!
-//! It is also deliberately harder than `users`. That screen is all Text /
-//! Number / Date / Badge, which `CellKind` already covers, so refactoring it
-//! would prove nothing. This one carries three things the descriptor cannot
-//! currently express:
-//!
-//!   1. a currency amount formatted for a locale (cs-CZ grouping, `Kč` suffix)
-//!   2. a column computed from two fields (`days_late`, from due date + status)
-//!   3. a cell that is a link rather than text
-//!
-//! If the refactor forces a change to `descriptor.rs` or `table.rs`, that is
-//! the result of the experiment. Record what forced it in NOTES.md before
-//! changing anything.
+//! ATTEMPT 1 — refactor onto the existing skeleton, changing nothing in
+//! `descriptor.rs` or `table.rs`. Whatever this cannot express is the result.
 
-use topcoat::{Result, view::{component, view}};
+use crate::descriptor::{CellKind, Column, TableDescriptor};
 
 pub struct Invoice {
     pub number: &'static str,
@@ -37,10 +22,6 @@ pub fn rows() -> Vec<Invoice> {
     ]
 }
 
-/// cs-CZ money formatting: space as the thousands separator, comma as the
-/// decimal mark, currency after the number. Written out rather than pulled
-/// from a crate so the refactor has something concrete to fail to express —
-/// a `fn(&T) -> String` accessor cannot capture a locale.
 fn koruna(haleru: i64) -> String {
     let whole = haleru / 100;
     let cents = (haleru % 100).abs();
@@ -57,41 +38,20 @@ fn koruna(haleru: i64) -> String {
     format!("{grouped},{cents:02} Kč")
 }
 
-#[component]
-pub async fn invoices_page(rows: Vec<Invoice>) -> Result {
-    view! {
-        <h1>"Invoices"</h1>
-        <table>
-            <thead>
-                <tr>
-                    <th>"Number"</th>
-                    <th>"Client"</th>
-                    <th>"Amount"</th>
-                    <th>"Due"</th>
-                    <th>"Status"</th>
-                    <th>"Late"</th>
-                </tr>
-            </thead>
-            <tbody>
-                for inv in &rows {
-                    <tr>
-                        <td class="cell cell-text">
-                            <a href=(format!("/invoices/{}", inv.number))>(inv.number)</a>
-                        </td>
-                        <td class="cell cell-text">(inv.client)</td>
-                        <td class="cell cell-number">(koruna(inv.amount_haleru))</td>
-                        <td class="cell cell-date">(inv.due)</td>
-                        <td class="cell cell-badge">(inv.status)</td>
-                        <td class="cell cell-number">
-                            if inv.days_late > 0 {
-                                (format!("{} days", inv.days_late))
-                            } else {
-                                "—"
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-}
+pub const INVOICES: TableDescriptor<Invoice> = TableDescriptor {
+    title: "Invoices",
+    columns: &[
+        // The link column. There is no way to say "this cell is an anchor",
+        // so the closest the descriptor can get is the markup as a string.
+        Column { header: "Number", kind: CellKind::Text, get: |i| format!("<a href=\"/invoices/{}\">{}</a>", i.number, i.number) },
+        Column { header: "Client", kind: CellKind::Text,   get: |i| i.client.to_string() },
+        // Locale formatting survives ONLY because cs-CZ is hardcoded inside
+        // `koruna`. A non-capturing closure coerces to `fn`; the moment the
+        // locale is a parameter, this stops compiling.
+        Column { header: "Amount", kind: CellKind::Number, get: |i| koruna(i.amount_haleru) },
+        Column { header: "Due",    kind: CellKind::Date,   get: |i| i.due.to_string() },
+        Column { header: "Status", kind: CellKind::Badge,  get: |i| i.status.to_string() },
+        // Computed from another field — this one the descriptor handles fine.
+        Column { header: "Late",   kind: CellKind::Number, get: |i| if i.days_late > 0 { format!("{} days", i.days_late) } else { "—".to_string() } },
+    ],
+};

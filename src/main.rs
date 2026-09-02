@@ -51,7 +51,13 @@ async fn invoices_list() -> Result {
                 <title>"Invoices"</title>
                 topcoat::dev::script()
             </head>
-            <body>invoices::invoices_page(rows: invoices::rows())</body>
+            <body>
+                table::table_page(
+                    title: invoices::INVOICES.title,
+                    columns: invoices::INVOICES.columns,
+                    rows: invoices::rows(),
+                )
+            </body>
         </html>
     }
 }
