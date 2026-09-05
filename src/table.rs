@@ -5,7 +5,7 @@
 //! and that failure is the most interesting thing the pilot could produce —
 //! write it down rather than working around it.
 
-use crate::descriptor::{CellKind, Column};
+use crate::descriptor::{CellKind, TableDescriptor};
 use topcoat::{
     view::{component, view},
     Result,
@@ -24,16 +24,16 @@ fn cell_class<T: 'static>(kind: &CellKind<T>) -> &'static str {
 
 #[component]
 pub async fn table_page<T: 'static + Send + Sync>(
-    title: &str,
-    columns: &'static [Column<T>],
+    descriptor: TableDescriptor<T>,
     rows: Vec<T>,
 ) -> Result {
+    let TableDescriptor { title, columns } = descriptor;
     view! {
         <h1>(title)</h1>
         <table>
             <thead>
                 <tr>
-                    for col in columns {
+                    for col in &columns {
                         <th>(col.header)</th>
                     }
                 </tr>
@@ -41,7 +41,7 @@ pub async fn table_page<T: 'static + Send + Sync>(
             <tbody>
                 for row in &rows {
                     <tr>
-                        for col in columns {
+                        for col in &columns {
                             <td class=(cell_class(&col.kind))>
                                 if let CellKind::Link { href } = &col.kind {
                                     <a href=(href(row))>((col.get)(row))</a>

@@ -35,17 +35,28 @@ pub enum CellKind<T: 'static> {
     Date,
     Badge,
     /// An anchor. The href is computed from the row exactly as the label is.
-    Link { href: fn(&T) -> String },
+    Link { href: Accessor<T> },
 }
 
-// Derived `Copy`/`Clone` would demand `T: Copy`, which is wrong — the variant
-// holds a function pointer, and those are `Copy` whatever `T` is.
-impl<T: 'static> Clone for CellKind<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T: 'static> Copy for CellKind<T> {}
+/// **This type is the whole finding.**
+///
+/// It was `fn(&T) -> String` — a plain function pointer, `Copy`, `const`-able,
+/// no allocation. That works for exactly as long as every cell is a pure
+/// function of the row.
+///
+/// It is now a boxed closure, because the locale comes from the request and an
+/// `fn` pointer cannot capture. What that cost, precisely:
+///
+/// - `Column` and `CellKind` are no longer `Copy`, so they are no longer
+///   `const`, so a descriptor is no longer a `static` — it is built per
+///   request, with one allocation per column.
+/// - `TableDescriptor.columns` went from `&'static [Column<T>]` to `Vec`.
+/// - `Send + Sync` had to be spelled out, because `#[component]` requires the
+///   future to be `Send` and a bare `dyn Fn` is neither.
+///
+/// What it bought: the global is gone, two locales can coexist, and a cell's
+/// value no longer depends on when it is read.
+pub type Accessor<T> = Box<dyn Fn(&T) -> String + Send + Sync>;
 
 /// One column: a header, how to draw it, and how to get it out of a row.
 ///
@@ -56,11 +67,22 @@ impl<T: 'static> Copy for CellKind<T> {}
 pub struct Column<T: 'static> {
     pub header: &'static str,
     pub kind: CellKind<T>,
-    pub get: fn(&T) -> String,
+    pub get: Accessor<T>,
 }
 
 /// A screen, declared.
 pub struct TableDescriptor<T: 'static> {
     pub title: &'static str,
-    pub columns: &'static [Column<T>],
+    pub columns: Vec<Column<T>>,
+}
+
+/// Sugar so a descriptor still *reads* as data at the call site, which is the
+/// thing worth preserving. `text("Client", |i| ...)` is not much further from
+/// the original than `Column { header, kind, get }` was.
+pub fn col<T: 'static>(
+    header: &'static str,
+    kind: CellKind<T>,
+    get: impl Fn(&T) -> String + Send + Sync + 'static,
+) -> Column<T> {
+    Column { header, kind, get: Box::new(get) }
 }

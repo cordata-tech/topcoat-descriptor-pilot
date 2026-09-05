@@ -32,8 +32,7 @@ async fn home() -> Result {
             </head>
             <body>
                 table::table_page(
-                    title: users::USERS.title,
-                    columns: users::USERS.columns,
+                    descriptor: users::users(),
                     rows: users::rows(),
                 )
             </body>
@@ -46,15 +45,13 @@ async fn home() -> Result {
 // the descriptor has to reproduce.
 #[page("/invoices")]
 async fn invoices_en() -> Result {
-    invoices::set_locale(invoices::Locale::En);
     view! {
         <!DOCTYPE html>
         <html>
             <head><title>"Invoices"</title>topcoat::dev::script()</head>
             <body>
                 table::table_page(
-                    title: invoices::descriptor(invoices::Locale::En).title,
-                    columns: invoices::descriptor(invoices::Locale::En).columns,
+                    descriptor: invoices::descriptor(invoices::Locale::En),
                     rows: invoices::rows(),
                 )
             </body>
@@ -64,15 +61,13 @@ async fn invoices_en() -> Result {
 
 #[page("/de/invoices")]
 async fn invoices_de() -> Result {
-    invoices::set_locale(invoices::Locale::De);
     view! {
         <!DOCTYPE html>
         <html>
             <head><title>"Rechnungen"</title>topcoat::dev::script()</head>
             <body>
                 table::table_page(
-                    title: invoices::descriptor(invoices::Locale::De).title,
-                    columns: invoices::descriptor(invoices::Locale::De).columns,
+                    descriptor: invoices::descriptor(invoices::Locale::De),
                     rows: invoices::rows(),
                 )
             </body>

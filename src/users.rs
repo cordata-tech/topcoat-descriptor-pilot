@@ -3,7 +3,7 @@
 //! The zero-diff test needs a screen that already works before a second one is
 //! added. This is it. Do not add the second screen until this one is trusted.
 
-use crate::descriptor::{CellKind, Column, TableDescriptor};
+use crate::descriptor::{col, CellKind, TableDescriptor};
 
 pub struct User {
     pub name: &'static str,
@@ -13,36 +13,18 @@ pub struct User {
     pub status: &'static str,
 }
 
-pub const USERS: TableDescriptor<User> = TableDescriptor {
-    title: "Users",
-    columns: &[
-        Column {
-            header: "Name",
-            kind: CellKind::Text,
-            get: |u| u.name.to_string(),
-        },
-        Column {
-            header: "Email",
-            kind: CellKind::Text,
-            get: |u| u.email.to_string(),
-        },
-        Column {
-            header: "Seats",
-            kind: CellKind::Number,
-            get: |u| u.seats.to_string(),
-        },
-        Column {
-            header: "Joined",
-            kind: CellKind::Date,
-            get: |u| u.joined.to_string(),
-        },
-        Column {
-            header: "Status",
-            kind: CellKind::Badge,
-            get: |u| u.status.to_string(),
-        },
-    ],
-};
+pub fn users() -> TableDescriptor<User> {
+    TableDescriptor {
+        title: "Users",
+        columns: vec![
+            col("Name",   CellKind::Text,   |u: &User| u.name.to_string()),
+            col("Email",  CellKind::Text,   |u: &User| u.email.to_string()),
+            col("Seats",  CellKind::Number, |u: &User| u.seats.to_string()),
+            col("Joined", CellKind::Date,   |u: &User| u.joined.to_string()),
+            col("Status", CellKind::Badge,  |u: &User| u.status.to_string()),
+        ],
+    }
+}
 
 /// Fixture data. Toasty replaces this in step 2 — see NOTES.md Q4.
 pub fn rows() -> Vec<User> {

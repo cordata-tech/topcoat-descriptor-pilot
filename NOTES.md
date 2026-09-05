@@ -151,9 +151,71 @@ different, stricter artefact than a descriptor of closures**, and the strictness
 buys the one-way dependency the original post wanted. Whether the boundary is
 worth what it costs is the honest question, and it is not obvious.
 
-**Next:** redo the money column with `Box<dyn Fn>`, measure what that does to
-the descriptor (does it still read as data? does `const` go away entirely?),
-and delete the global. That comparison is the post. Nothing is proven until a
+### Attempt 3 — `Box<dyn Fn>`, global deleted. The result inverts the premise.
+
+```
+ZERO DIFF  users        (/)
+ZERO DIFF  invoices-en  (/invoices)
+ZERO DIFF  invoices-de  (/de/invoices)
+```
+
+Same three screens, byte-identical, **and this time without the global.** The
+accessors capture the locale directly.
+
+**The measurement, which is the surprise:**
+
+| | `fn` pointers + global | `Box<dyn Fn>` | |
+|---|---:|---:|---|
+| `descriptor.rs` | 66 | 88 | +22 |
+| `table.rs` | 58 | 58 | — |
+| `users.rs` | 72 | 54 | −18 |
+| `invoices.rs` | 119 | 88 | −31 |
+| **total** | **315** | **288** | **−27** |
+
+**The "expensive" version is smaller.** The framework grew 22 lines — a
+documented `Accessor<T>` alias and a `col(...)` constructor — and the domains
+shrank 49, because the `const` version needed a macro to generate two static
+column arrays per locale, plus a global to smuggle the locale in. All of that
+is gone.
+
+### What was actually traded
+
+**Lost:** `Copy` on `Column` and `CellKind`; `const`/`static` descriptors;
+`&'static [Column<T>]`; zero allocation. A descriptor is now built per request
+with one `Box` per column.
+
+**Gained:** the locale is captured rather than smuggled; two locales coexist;
+a cell's value no longer depends on when it is read; and the domain files got
+substantially shorter.
+
+**Kept, which was the actual question:** `table.rs` still names no domain type,
+and a descriptor still *reads* as data at the call site —
+
+```rust
+col(if de { "Betrag" } else { "Amount" }, CellKind::Number,
+    move |i: &Invoice| money(l, i.amount_cents)),
+```
+
+That is not meaningfully further from `Column { header, kind, get }` than the
+original was. **Declarative survived; `const` did not.**
+
+### The conclusion, and it is not the one I expected
+
+The premise going in — inherited from the React post — was that the descriptor
+should be *data*, and the Rust version's `fn` pointers looked like a stricter,
+purer form of the same idea. They are stricter. They are not purer, and past
+the first cell that needs ambient context they are not cheaper either: keeping
+`const` cost a macro, two duplicated arrays and a global, which is more
+machinery than the boxed closure it was avoiding.
+
+So the honest finding is that **`const`-ness was never the property that
+mattered.** What made the original abstraction work was the one-way dependency
+— domains hand the framework descriptions, the framework knows nothing about
+domains — and that held throughout, unchanged, across all three attempts. The
+thing that broke was an implementation detail everyone (me included) mistook
+for the idea.
+
+Which is a better post than either "it worked" or "it didn't". Nothing is proven until a
 different descriptor is added and `users` renders byte-identically. Do not
 record a verdict here before then.
 
