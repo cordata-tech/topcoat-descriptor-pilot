@@ -11,7 +11,7 @@ publish = false
 topcoat = "0.6"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros"] }
 
-# Declared but unused so far — persistence is step two, and the promised
-# trade-offs question (NOTES.md Q4) cannot be answered before then.
+# Answers NOTES.md Q4: the fixtures were swapped for a real Toasty model over
+# SQLite, and no accessor in either descriptor had to change.
 toasty = { version = "0.10", features = ["sqlite"] }
 uuid = { version = "1", features = ["v7"] }
