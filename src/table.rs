@@ -7,8 +7,8 @@
 
 use crate::descriptor::{CellKind, Column};
 use topcoat::{
-    Result,
     view::{component, view},
+    Result,
 };
 
 fn cell_class(kind: CellKind) -> &'static str {
