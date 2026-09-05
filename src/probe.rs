@@ -7,7 +7,10 @@
 
 #![allow(dead_code, unused_imports)]
 
-use topcoat::{Result, view::{component, view}};
+use topcoat::{
+    view::{component, view},
+    Result,
+};
 
 // ── P1 — a value that isn't Send ────────────────────────────────────────
 // use std::rc::Rc;

@@ -19,13 +19,33 @@
 
 /// How a cell is drawn. Closed on purpose: a domain cannot add a variant, which
 /// is the one-way dependency the original post argued for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CellKind {
+///
+/// `Link` was added 2026-09-05, after the zero-diff test failed on exactly one
+/// column. `fn(&T) -> String` can express any cell that is a **value** and no
+/// cell that is **structure** — an interpolated `String` is escaped by `view!`,
+/// correctly, so markup returned from an accessor renders as visible text.
+///
+/// Note what the fix did and did not require. The framework learned a new
+/// *shape*; it learned nothing about invoices. That is the one-way dependency
+/// working rather than failing — and it is the cost side of the trade, because
+/// a domain that needs a new shape cannot add one itself.
+pub enum CellKind<T: 'static> {
     Text,
     Number,
     Date,
     Badge,
+    /// An anchor. The href is computed from the row exactly as the label is.
+    Link { href: fn(&T) -> String },
 }
+
+// Derived `Copy`/`Clone` would demand `T: Copy`, which is wrong — the variant
+// holds a function pointer, and those are `Copy` whatever `T` is.
+impl<T: 'static> Clone for CellKind<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T: 'static> Copy for CellKind<T> {}
 
 /// One column: a header, how to draw it, and how to get it out of a row.
 ///
@@ -35,7 +55,7 @@ pub enum CellKind {
 /// down: it is the point where the descriptor stops being data.
 pub struct Column<T: 'static> {
     pub header: &'static str,
-    pub kind: CellKind,
+    pub kind: CellKind<T>,
     pub get: fn(&T) -> String,
 }
 

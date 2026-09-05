@@ -11,9 +11,11 @@ use topcoat::{
     Result,
 };
 
-fn cell_class(kind: CellKind) -> &'static str {
+fn cell_class<T: 'static>(kind: &CellKind<T>) -> &'static str {
     match kind {
-        CellKind::Text => "cell cell-text",
+        // A link is still a text cell as far as the class goes — the baseline
+        // it has to reproduce says `cell cell-text`.
+        CellKind::Text | CellKind::Link { .. } => "cell cell-text",
         CellKind::Number => "cell cell-number",
         CellKind::Date => "cell cell-date",
         CellKind::Badge => "cell cell-badge",
@@ -40,7 +42,13 @@ pub async fn table_page<T: 'static + Send + Sync>(
                 for row in &rows {
                     <tr>
                         for col in columns {
-                            <td class=(cell_class(col.kind))>((col.get)(row))</td>
+                            <td class=(cell_class(&col.kind))>
+                                if let CellKind::Link { href } = &col.kind {
+                                    <a href=(href(row))>((col.get)(row))</a>
+                                } else {
+                                    ((col.get)(row))
+                                }
+                            </td>
                         }
                     </tr>
                 }

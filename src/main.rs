@@ -46,22 +46,36 @@ async fn home() -> Result {
 // the descriptor has to reproduce.
 #[page("/invoices")]
 async fn invoices_en() -> Result {
+    invoices::set_locale(invoices::Locale::En);
     view! {
         <!DOCTYPE html>
         <html>
             <head><title>"Invoices"</title>topcoat::dev::script()</head>
-            <body>invoices::invoices_page(locale: invoices::Locale::En, rows: invoices::rows())</body>
+            <body>
+                table::table_page(
+                    title: invoices::descriptor(invoices::Locale::En).title,
+                    columns: invoices::descriptor(invoices::Locale::En).columns,
+                    rows: invoices::rows(),
+                )
+            </body>
         </html>
     }
 }
 
 #[page("/de/invoices")]
 async fn invoices_de() -> Result {
+    invoices::set_locale(invoices::Locale::De);
     view! {
         <!DOCTYPE html>
         <html>
             <head><title>"Rechnungen"</title>topcoat::dev::script()</head>
-            <body>invoices::invoices_page(locale: invoices::Locale::De, rows: invoices::rows())</body>
+            <body>
+                table::table_page(
+                    title: invoices::descriptor(invoices::Locale::De).title,
+                    columns: invoices::descriptor(invoices::Locale::De).columns,
+                    rows: invoices::rows(),
+                )
+            </body>
         </html>
     }
 }

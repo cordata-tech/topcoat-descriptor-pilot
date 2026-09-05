@@ -16,7 +16,7 @@ Versions: `topcoat` 0.6.2, `toasty` 0.10.0, `rustc` 1.97.1, macOS arm64.
 
 **Who wrote what**, because the post depends on it: the scaffold, the
 hand-written `invoices` screen and the zero-diff harness were written by
-Claude under direction. The Q1 findings below are therefore *its* experience
+Claude under direction. The Q1 findings below are therefore _its_ experience
 of the framework, not László's — the post must say so, or the refactor and
 the notes that come out of it have to be his. Do not blur this.
 
@@ -83,7 +83,7 @@ cell that is **structure**. `fn(&T) -> String` can express anything you can
 compute; it cannot express anything you can nest.
 
 Fixing it means adding a variant to `CellKind` and a branch in `table.rs` —
-a change to the *framework* side, not the domain side. **That is the one-way
+a change to the _framework_ side, not the domain side. **That is the one-way
 dependency working as designed**, not failing: a domain cannot smuggle in new
 presentation, so a new cell shape is a deliberate, single, framework-wide
 decision.
@@ -95,8 +95,65 @@ stricter boundary; the price is that new presentation costs a framework
 change, and the benefit is that the framework knows every shape a cell can
 take. Which of those you want is the actual decision, and it is not obvious.
 
-**Next:** add `CellKind::Link` with an href accessor, re-run, and confirm the
-diff goes to zero without `table.rs` learning any domain type. Nothing is proven until a
+### Attempt 2 — `CellKind::Link` added, and the locale test run
+
+```
+ZERO DIFF  users        (/)
+ZERO DIFF  invoices-en  (/invoices)
+ZERO DIFF  invoices-de  (/de/invoices)
+```
+
+**Do not read that as a pass.** Two separate things happened and only one of
+them is good.
+
+**The link: clean.** `CellKind` gained a `Link { href: fn(&T) -> String }`
+variant and `table.rs` gained one branch. Blast radius was two framework files
+and zero domain knowledge — `table.rs` still names no domain type. The
+framework learned a **shape**, which is the one-way dependency behaving
+exactly as designed. Cost noted honestly: making the enum generic over `T`
+also meant hand-writing `Clone`/`Copy`, because the derive would have demanded
+`T: Copy` for a variant that only holds a function pointer.
+
+**The locale: the thesis broke, as predicted on day one.**
+
+`fn(&T) -> String` cannot capture, and the locale comes from the *route*, not
+the row — so an accessor cannot see it. The only way to keep the descriptor a
+`const` was **a global**:
+
+```rust
+static LOCALE: AtomicU8 = AtomicU8::new(0);   // set per request, read per cell
+```
+
+That is not a fix, it is the smallest thing that compiles, and it is worse
+than the problem it solves: two descriptors differing only by locale cannot
+exist at once, and what a cell renders now depends on *when* it is read. It is
+committed deliberately, with this note, so the cost is visible in code rather
+than described in prose.
+
+**So the green result above is a test pinning the wrong thing** — the same
+shape as Trap 2 in the trace_id post. Zero diff was achieved by making the
+program worse.
+
+### The actual answer to Q0
+
+**A screen descriptor survives the move to Rust as `const` data for exactly as
+long as every cell is a pure function of the row.** Add ambient context —
+locale, permissions, tenant, an injected formatter — and the accessor must
+become `Box<dyn Fn(&T) -> String + Send + Sync>`, at which point the
+descriptor is no longer `const`, no longer trivially `Copy`, and no longer the
+cheap thing the original post was recommending.
+
+React never hit this because a `ColumnDef` held a closure from the start. It
+captured whatever it liked and nobody noticed, because in JavaScript a
+function and a value are the same kind of thing. The Rust version makes the
+distinction explicit: **a descriptor of `fn` pointers is a genuinely
+different, stricter artefact than a descriptor of closures**, and the strictness
+buys the one-way dependency the original post wanted. Whether the boundary is
+worth what it costs is the honest question, and it is not obvious.
+
+**Next:** redo the money column with `Box<dyn Fn>`, measure what that does to
+the descriptor (does it still read as data? does `const` go away entirely?),
+and delete the global. That comparison is the post. Nothing is proven until a
 different descriptor is added and `users` renders byte-identically. Do not
 record a verdict here before then.
 
@@ -116,7 +173,7 @@ React original, and worth saying in the post.
 
 **The harness lied once before it was trusted, which is the point of proving a
 test discriminates rather than assuming it.** Perturbing a column header
-correctly produced `CHANGED` (exit 1). Reverting it with `mv` then *still*
+correctly produced `CHANGED` (exit 1). Reverting it with `mv` then _still_
 produced `CHANGED` — because `mv` restores the original mtime, leaving the
 source older than the compiled binary, so cargo skipped the rebuild and the
 server kept serving the previous build. Nothing reported a skipped rebuild.
@@ -151,7 +208,7 @@ confidently wrong because a step upstream silently did not happen.
   ```
 
   The macro generates an item named after the function, so the collision is
-  real — but the diagnostics describe the *expansion*, not the cause. This is
+  real — but the diagnostics describe the _expansion_, not the cause. This is
   the first thing found that a newcomer would lose time to. Renaming to
   `invoices_list` fixed it instantly.
 
@@ -163,19 +220,223 @@ confidently wrong because a step upstream silently did not happen.
 
 ## Q2 — Error messages when the macro rejects an expression
 
-**Untested.** Nothing has been fed to `view!` that it refused yet. This needs
-deliberate probing rather than waiting for an accident: try a non-`Send` value,
-a borrow that outlives the view, a `$(...)` expression that cannot cross to
-JavaScript. The interesting question is whether the error points at the source
-line or at macro-expanded code.
+**Probed 2026-09-05 by László** (five deliberate failures, one at a time — see
+`Q2-PROBES.md`). Raw compiler output at the bottom of this section.
+
+| Probe | Points at | Names the cause? | Verdict |
+|---|---|---|---|
+| P1 `Rc` | your `view!` line | **no — wrong cause** | probe was mis-designed, see below |
+| P2 borrow escapes | — | — | **compiled. No error at all** |
+| P3 `$()` server-only | the exact `$(…)` span | partly — in framework vocabulary | the seam |
+| P4 malformed markup | the exact closing tag | **yes, plainly** | the best of the five |
+| P5 not displayable | your line **and** the struct definition | yes | good |
+
+### The headline: spans are consistently good
+
+**Every error points at the source line, not into macro-expanded code.** That
+was the question this probe existed to answer, and the answer is favourable.
+P4 and P5 go further — P4 names the exact mismatched tag, P5 adds a second
+span pointing at the offending struct's definition.
+
+### P4 is a purpose-built diagnostic and it shows
+
+```
+error: closing tag `div` does not match opening tag `p`
+ --> src/probe.rs:47:37
+```
+
+No trait bounds, no expansion note, plain English, exact column. Someone wrote
+that error on purpose. It is the most common mistake anyone will make and it
+is the best-handled.
+
+### Where it thins out: framework vocabulary in trait bounds
+
+P1, P3 and P5 all surface as unsatisfied trait bounds on **types a reader has
+never heard of** — `NodeViewParts`, `Surrogated` — followed by a `help:` list
+of implementors ending "and 57 others". Actionable if you read Rust fluently;
+it tells you *that* the value is unacceptable, never the **rule** for what is
+acceptable.
+
+P3 is the one that matters, since `$()` is the headline feature:
+
+```
+error[E0277]: the trait bound `fn() -> impl Future<Output = String>
+              {server_only}: Surrogated` is not satisfied
+ --> src/probe.rs:42:26
+    | <button @click=$(server_only())>"click"</button>
+    |                 ^^^^^^^^^^^ the trait `Surrogated` is not implemented
+```
+
+The span is exactly right — it underlines the offending call inside `$()`, not
+the whole view. But nothing says *why an async fn cannot cross to JavaScript*,
+which is the actual rule, and `Surrogated` is not a word in the README. The
+boundary is policed correctly and explained poorly.
+
+### P2 did not fail, which is a finding
+
+A borrow taken in an inner block and interpolated into `view!` **compiled
+cleanly**. The expected lifetime error never happened, so `view!` is not
+holding the borrow past the block. Good news, and worth saying: this is the
+class of error people fear most from a Rust macro, and it did not appear.
+
+### P1 was a bad probe — mine, not Topcoat's
+
+The intent was to test a non-`Send` value. What it actually tested was
+renderability: `Rc<String>` fails on `NodeViewParts` before `Send` is ever
+considered, making P1 a duplicate of P5. A real `Send` probe has to hold the
+`Rc` **across an await** inside the component. Recorded rather than quietly
+dropped, because the promised post reports on error messages and a probe that
+measured the wrong thing would have produced a wrong claim.
+
+### Would you put a junior on this macro?
+
+Yes, with one caveat: spans are good enough that they will always land in the
+right place, but they will need telling *once* what `NodeViewParts` and
+`Surrogated` mean, because the errors never say. That is a documentation gap,
+not a design one.
+
+---
+
+### Raw output
+
+P1
+
+Compiling cordata-topcoat-pilot v0.1.0 (/Users/lhadhazy/dev/cordata-topcoat-pilot)
+error[E0277]: the trait bound `Rc<String>: NodeViewParts` is not satisfied
+--> src/probe.rs:21:5
+|
+21 | view! { <p>(name)</p> }
+| ^^^^^^^^^^^^^^^^^^^^^^^ the trait `NodeViewParts` is not implemented for `Rc<String>`
+|
+= help: the following other types implement trait `NodeViewParts`:
+&&'b T
+&String
+&bool
+&char
+&f32
+&f64
+&i128
+&i16
+and 57 others
+note: required by a bound in `topcoat::view::internal::Builder::<'_, '_, '_>::node`
+--> /Users/lhadhazy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/topcoat-view-0.6.2/src/internal.rs:184:40
+|
+184 | pub fn node(&mut self, value: impl NodeViewParts) {
+| ^^^^^^^^^^^^^ required by this bound in `Builder::<'_, '_, '_>::node`
+= note: this error originates in the macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `cordata-topcoat-pilot` (bin "cordata-topcoat-pilot") due to 1 previous error
+
+P2
+
+Compiling cordata-topcoat-pilot v0.1.0 (/Users/lhadhazy/dev/cordata-topcoat-pilot)
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.12s
+
+￼
+
+P3
+
+Compiling cordata-topcoat-pilot v0.1.0 (/Users/lhadhazy/dev/cordata-topcoat-pilot)
+error[E0277]: the trait bound `fn() -> impl Future<Output = String> {server_only}: Surrogated` is not satisfied
+--> src/probe.rs:42:26
+|
+41 | / view! {
+42 | | <button @click=$(server_only())>"click"</button>
+| | ^^^^^^^^^^^ the trait `Surrogated` is not implemented for fn item `fn() -> impl Future<Output = String> {server_onl
+y}`
+43 | | }
+| |**\_**- required by a bound introduced by this call
+|
+= help: the following other types implement trait `Surrogated`:
+&'**lifetime Option<T>
+&'**lifetime Result<T, E>
+&'**lifetime String
+&'**lifetime bool
+&'**lifetime f64
+&'**lifetime mut Option<T>
+&'**lifetime mut Result<T, E>
+&'**lifetime mut String
+and 25 others
+
+error[E0277]: the trait bound `fn() -> impl Future<Output = String> {server_only}: Surrogated` is not satisfied
+--> src/probe.rs:41:5
+|
+41 | / view! {
+42 | | <button @click=$(server_only())>"click"</button>
+43 | | }
+| |**\_**^ the trait `Surrogated` is not implemented for fn item `fn() -> impl Future<Output = String> {server_only}`
+|
+= help: the following other types implement trait `Surrogated`:
+&'**lifetime Option<T>
+&'**lifetime Result<T, E>
+&'**lifetime String
+&'**lifetime bool
+&'**lifetime f64
+&'**lifetime mut Option<T>
+&'**lifetime mut Result<T, E>
+&'**lifetime mut String
+and 25 others
+= note: this error originates in the macro `::topcoat::runtime::expr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+￼
+
+P4
+
+Compiling cordata-topcoat-pilot v0.1.0 (/Users/lhadhazy/dev/cordata-topcoat-pilot)
+error: closing tag `div` does not match opening tag `p`
+--> src/probe.rs:47:37
+|
+47 | view! { <div><p>"unclosed div"</div> }
+| ^^^
+
+error: could not compile `cordata-topcoat-pilot` (bin "cordata-topcoat-pilot") due to 1 previous error
+
+￼
+
+P5
+
+Compiling cordata-topcoat-pilot v0.1.0 (/Users/lhadhazy/dev/cordata-topcoat-pilot)
+error[E0277]: the trait bound `NotDisplayable: NodeViewParts` is not satisfied
+--> src/probe.rs:55:5
+|
+55 | view! { <p>(NotDisplayable)</p> }
+| ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+|
+help: the trait `NodeViewParts` is not implemented for `NotDisplayable`
+--> src/probe.rs:51:1
+|
+51 | struct NotDisplayable;
+| ^^^^^^^^^^^^^^^^^^^^^
+= help: the following other types implement trait `NodeViewParts`:
+&&'b T
+&String
+&bool
+&char
+&f32
+&f64
+&i128
+&i16
+and 57 others
+note: required by a bound in `topcoat::view::internal::Builder::<'_, '_, '_>::node`
+--> /Users/lhadhazy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/topcoat-view-0.6.2/src/internal.rs:184:40
+|
+184 | pub fn node(&mut self, value: impl NodeViewParts) {
+| ^^^^^^^^^^^^^ required by this bound in `Builder::<'_, '_, '_>::node`
+= note: this error originates in the macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `cordata-topcoat-pilot` (bin "cordata-topcoat-pilot") due to 1 previous error
+
+￼
 
 ## Q3 — Does the fast-rebuild loop hold up?
 
 First numbers, this project only — small, three modules, one dependency tree:
 
-| Change | Time |
-|---|---|
-| touch `table.rs`, `cargo build` | **1.38 s** |
+| Change                                               | Time       |
+| ---------------------------------------------------- | ---------- |
+| touch `table.rs`, `cargo build`                      | **1.38 s** |
 | `cargo clean -p` + rebuild (crate only, deps cached) | **1.80 s** |
 
 Honest framing: this is a scaffold, not an app. The number that matters is what

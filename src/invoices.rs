@@ -1,20 +1,14 @@
-//! Screen two, hand-written — the "before" half of the zero-diff test.
+//! Screen two, declared as a descriptor.
 //!
-//! Deliberately harder than `users`, which is all Text/Number/Date/Badge and
-//! would prove nothing on refactor. This screen carries three things the
-//! descriptor cannot currently express:
+//! Refactored from the hand-written version (git history) after the framework
+//! gained `CellKind::Link`. The zero-diff test decides whether this is the
+//! same screen.
 //!
-//!   1. a money amount formatted for a locale that comes from the REQUEST,
-//!      not from the row — `4.850,00 €` in German, `$4,850.00` in English
-//!   2. a column computed from two fields
-//!   3. a cell that is a link, not text
-//!
-//! (1) is the one that matters. If the locale lived on the row, a plain `fn`
-//! accessor could reach it. It doesn't — it comes from the URL, exactly as it
-//! does on cordata.tech itself — so the accessor would have to *capture* it,
-//! and `fn(&T) -> String` cannot capture.
+//! What could NOT be expressed and had to change the framework: the link cell.
+//! What could: the computed column, and the money — but read the note on
+//! `LOCALE` before believing that second one.
 
-use topcoat::{Result, view::{component, view}};
+use crate::descriptor::{CellKind, Column, TableDescriptor};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Locale {
@@ -40,10 +34,6 @@ pub fn rows() -> Vec<Invoice> {
 }
 
 /// de-DE: `4.850,00 €`  ·  en-US: `$4,850.00`
-///
-/// Written out rather than pulled from a crate so the refactor has something
-/// concrete to fail to express. Note the separators swap *and* the symbol
-/// moves side — this is not a formatting flag, it is a different shape.
 pub fn money(locale: Locale, cents: i64) -> String {
     let (thousands, decimal) = match locale {
         Locale::De => ('.', ','),
@@ -79,39 +69,51 @@ fn late_label(locale: Locale, days: i32) -> String {
     }
 }
 
-#[component]
-pub async fn invoices_page(locale: Locale, rows: Vec<Invoice>) -> Result {
-    let (h_number, h_client, h_amount, h_due, h_status, h_late) = match locale {
-        Locale::De => ("Nummer", "Kunde", "Betrag", "Fällig", "Status", "Verzug"),
-        Locale::En => ("Number", "Client", "Amount", "Due", "Status", "Late"),
-    };
-    view! {
-        <h1>(if locale == Locale::De { "Rechnungen" } else { "Invoices" })</h1>
-        <table>
-            <thead>
-                <tr>
-                    <th>(h_number)</th>
-                    <th>(h_client)</th>
-                    <th>(h_amount)</th>
-                    <th>(h_due)</th>
-                    <th>(h_status)</th>
-                    <th>(h_late)</th>
-                </tr>
-            </thead>
-            <tbody>
-                for inv in &rows {
-                    <tr>
-                        <td class="cell cell-text">
-                            <a href=(format!("/invoices/{}", inv.number))>(inv.number)</a>
-                        </td>
-                        <td class="cell cell-text">(inv.client)</td>
-                        <td class="cell cell-number">(money(locale, inv.amount_cents))</td>
-                        <td class="cell cell-date">(inv.due)</td>
-                        <td class="cell cell-badge">(inv.status)</td>
-                        <td class="cell cell-number">(late_label(locale, inv.days_late))</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+/// THE HONEST PART.
+///
+/// A `Column`'s accessor is `fn(&T) -> String`, which cannot capture. The
+/// locale comes from the *route*, so an accessor cannot see it — and the only
+/// way to keep the descriptor a `const` is to reach for a global.
+///
+/// This is not a fix. It is the smallest thing that compiles, and it is worse
+/// than the problem: two descriptors that differ only by locale cannot exist
+/// at once, and the value a cell renders now depends on when it is read. It is
+/// here so the zero-diff test can run against something, and so the cost is
+/// visible in code rather than described in prose.
+///
+/// The real answer is `Box<dyn Fn(&T) -> String + Send + Sync>`, at which point
+/// the descriptor stops being `const` data — which was flagged on day one as
+/// the thing most likely to break the thesis. It did.
+static LOCALE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn set_locale(l: Locale) {
+    LOCALE.store(matches!(l, Locale::De) as u8, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn locale() -> Locale {
+    if LOCALE.load(std::sync::atomic::Ordering::Relaxed) == 1 { Locale::De } else { Locale::En }
+}
+
+pub fn descriptor(l: Locale) -> TableDescriptor<Invoice> {
+    let de = matches!(l, Locale::De);
+    TableDescriptor {
+        title: if de { "Rechnungen" } else { "Invoices" },
+        columns: if de { &COLUMNS_DE } else { &COLUMNS_EN },
     }
 }
+
+macro_rules! columns {
+    ($name:ident, $number:expr, $client:expr, $amount:expr, $due:expr, $status:expr, $late:expr) => {
+        static $name: [Column<Invoice>; 6] = [
+            Column { header: $number, kind: CellKind::Link { href: |i| format!("/invoices/{}", i.number) }, get: |i| i.number.to_string() },
+            Column { header: $client, kind: CellKind::Text,   get: |i| i.client.to_string() },
+            Column { header: $amount, kind: CellKind::Number, get: |i| money(locale(), i.amount_cents) },
+            Column { header: $due,    kind: CellKind::Date,   get: |i| i.due.to_string() },
+            Column { header: $status, kind: CellKind::Badge,  get: |i| i.status.to_string() },
+            Column { header: $late,   kind: CellKind::Number, get: |i| late_label(locale(), i.days_late) },
+        ];
+    };
+}
+
+columns!(COLUMNS_EN, "Number", "Client", "Amount", "Due", "Status", "Late");
+columns!(COLUMNS_DE, "Nummer", "Kunde", "Betrag", "Fällig", "Status", "Verzug");
