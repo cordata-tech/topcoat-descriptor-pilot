@@ -1,7 +1,21 @@
 # Findings
 
 The four questions `topcoat-full-stack-rust` (2026-08-02) promised to answer,
-plus the one this pilot exists to test. **Write findings here while building,
+plus the one this pilot exists to test.
+
+| | | Status |
+|---|---|---|
+| **[Q0](#q0--does-the-descriptor-survive-the-move-to-rust)** | Does the descriptor survive the move to Rust? | **answered** — declarative survived, `const` did not |
+| **[Q1](#q1--developer-experience-end-to-end)** | Developer experience end to end | partial — and **not** László's experience, see below |
+| **[Q2](#q2--error-messages-when-the-macro-rejects-an-expression)** | Error messages when the macro rejects an expression | **answered** — spans good, vocabulary opaque |
+| **[Q3](#q3--does-the-fast-rebuild-loop-hold-up)** | Does the fast-rebuild loop hold up? | **answered** — yes, ~1.6ms per `view!` block |
+| **[Q4](#q4--where-the-trade-offs-land)** | Where the trade-offs land | **answered** — descriptor absorbed a real DB unchanged |
+
+Also here: [the zero-diff harness](#the-zero-diff-harness) and
+[notes for the CI/CD post](#for-the-cicd-post-second-post-not-the-same-one),
+which is a separate piece and must not be merged into this one.
+
+**Write findings here while building,
 not afterwards.** A reconstructed impression is worth nothing; the point of the
 pilot is that it happened.
 
@@ -494,30 +508,105 @@ error: could not compile `cordata-topcoat-pilot` (bin "cordata-topcoat-pilot") d
 
 ## Q3 — Does the fast-rebuild loop hold up?
 
-First numbers, this project only — small, three modules, one dependency tree:
+**Yes, and `view!` expansion is not the bottleneck.** Measured 2026-09-05 with
+`scripts/measure-rebuild.sh` — touch one file, rebuild, seven runs, take the
+median. macOS arm64, `rustc` 1.97.1, debug profile.
 
-| Change                                               | Time       |
-| ---------------------------------------------------- | ---------- |
-| touch `table.rs`, `cargo build`                      | **1.38 s** |
-| `cargo clean -p` + rebuild (crate only, deps cached) | **1.80 s** |
+**Correction to the first number recorded here.** The earlier 1.38s was a
+single cold-ish run. The warm median is **0.47s**; the first run after a pause
+is consistently ~1.3s and then it settles. One measurement was not a
+measurement.
 
-Honest framing: this is a scaffold, not an app. The number that matters is what
-this looks like at twenty components, and whether the `view!` macro expansion
-cost grows with template size. Re-measure and add rows as the pilot grows —
-a single early number proves nothing except that it is not pathological at
-this size.
+### Does it scale with template size?
 
-**Untested:** the dev-server reload loop (`topcoat::dev::script()` is wired but
-the browser-reload behaviour has not been exercised), and a cold build from an
-empty cargo registry.
+The real question is whether the macro dominates as an app grows. Generated
+N components each containing a `view!` block
+(`scripts/gen-views-for-measurement.py`) and re-measured:
+
+| `view!` blocks in crate | median rebuild |
+|---:|---:|
+| 6 | 0.47s |
+| 31 | 0.52s |
+| 81 | 0.57s |
+| 156 | 0.71s |
+
+**Roughly linear, and shallow — about 1.6ms per `view!` block.** Extrapolating
+naively, 500 components would land near 1.3s, which is still inside the range
+where the loop feels immediate. Nothing here suggests expansion cost becomes
+the thing you notice.
+
+Caveats worth keeping attached to those numbers: the generated components are
+simple (one loop, three elements, no `$(…)` reactivity, no `#[shard]`), it is
+one crate on one machine, and cargo recompiles the whole crate on any change
+so this is total crate time rather than per-file. A real app with heavier
+templates and client expressions could look different — but the slope, not the
+absolute, is what this measures, and the slope is gentle.
+
+**Untested:** the dev-server reload loop. `topcoat::dev::script()` is wired but
+the browser-refresh half has never been exercised, so "fast rebuild" here means
+`cargo build`, not the round trip a developer actually feels.
 
 ## Q4 — Where the trade-offs land
 
-Nothing earned yet. Toasty is a declared dependency but unused — screen one runs
-on fixture data in `users::rows()`. Persistence is step two and the trade-offs
-question cannot be answered before then.
+**Toasty wired in 2026-09-05.** `Invoice` is now a `#[derive(toasty::Model)]`
+backed by in-memory SQLite, seeded with the same three rows and read back with
+`Invoice::all().exec(&mut db)`. Same three screens, still byte-identical.
 
----
+### The descriptor absorbed a real database without changing
+
+**Not one accessor changed.** What moved was underneath them:
+
+| | fixture | Toasty model |
+|---|---|---|
+| string fields | `&'static str` | `String` |
+| `days_late` | `i32` | `i64` — Toasty's integer width |
+| `rows()` | sync | **`async`** |
+| descriptor | — | **unchanged** |
+
+Every accessor already returned `String`, so the widening was invisible to
+them. And `rows()` becoming `async` did not reach the descriptor either,
+because the rows are loaded *before* the table is rendered — the page awaits,
+then hands a `Vec<T>` to a component whose accessors stay synchronous.
+
+**That is the trade-off landing in a good place**, and it is the third time
+the same thing has held: the one-way dependency survived a new cell shape, a
+new source of ambient context, and now a swap of the entire data layer.
+
+### The limit, named rather than glossed
+
+This worked because **every column is a scalar already on the row.** It says
+nothing about `Deferred` relations, which is Toasty's lazy-loading shape — a
+column showing "invoices for this client" would need the accessor to hit the
+database, and `Fn(&T) -> String` is **synchronous**. There is no version of
+that signature which awaits.
+
+So the honest boundary of the Q4 answer: a descriptor of sync accessors is
+fine over a database as long as the query is done before rendering starts. The
+first column that needs to load something is the one that breaks it, and
+**that is untested** — no relation was added.
+
+### Friction, for the record
+
+- `collect(&mut db)` is not a terminal. The terminals are `exec()`,
+  `first().exec()`, and `get()`. The error — *"`InvoiceQuery` is not an
+  iterator"* — was clear enough to fix in one attempt.
+- `#[derive(toasty::Model)]` needs `uuid` as a direct dependency for the
+  `#[key] #[auto]` field; it is not re-exported.
+- Toasty's integer columns are `i64`. An `i32` field is a type error at the
+  call site, not at the model.
+
+### Gotcha that nearly became a false finding
+
+The first `cargo build` after enabling `toasty/sqlite` failed to resolve:
+`libsqlite3-sys ^0.38.0` "candidate versions found which didn't match: 0.36.0,
+0.35.0 …". That reads exactly like *the sqlite driver of the published Toasty
+is unbuildable*, which would have been a significant claim about the pairing
+the intro post named.
+
+**It was a stale local cargo index.** `libsqlite3-sys` 0.38.2 has been on
+crates.io the whole time; refreshing the index fixed it with no version change.
+Checking crates.io before writing it down is the only reason it is not in this
+file as a finding about Toasty.
 
 ## For the CI/CD post (second post, not the same one)
 

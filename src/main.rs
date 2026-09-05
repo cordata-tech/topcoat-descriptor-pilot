@@ -52,7 +52,7 @@ async fn invoices_en() -> Result {
             <body>
                 table::table_page(
                     descriptor: invoices::descriptor(invoices::Locale::En),
-                    rows: invoices::rows(),
+                    rows: invoices::rows().await,
                 )
             </body>
         </html>
@@ -68,7 +68,7 @@ async fn invoices_de() -> Result {
             <body>
                 table::table_page(
                     descriptor: invoices::descriptor(invoices::Locale::De),
-                    rows: invoices::rows(),
+                    rows: invoices::rows().await,
                 )
             </body>
         </html>

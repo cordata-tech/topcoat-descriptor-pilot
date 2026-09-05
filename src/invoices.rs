@@ -16,42 +16,76 @@ pub enum Locale {
     En,
 }
 
+/// Now a Toasty model rather than a plain struct. Note what that did to the
+/// field types: `&'static str` became `String`, because rows come from a
+/// database rather than a literal. Every descriptor accessor already returned
+/// `String`, so none of them changed — the boundary absorbed it.
+#[derive(Debug, toasty::Model)]
 pub struct Invoice {
-    pub number: &'static str,
-    pub client: &'static str,
+    #[key]
+    #[auto]
+    pub id: uuid::Uuid,
+    pub number: String,
+    pub client: String,
     pub amount_cents: i64,
-    pub due: &'static str,
-    pub status: &'static str,
-    pub days_late: i32,
+    pub due: String,
+    pub status: String,
+    pub days_late: i64,
 }
 
-pub fn rows() -> Vec<Invoice> {
-    vec![
-        Invoice {
-            number: "2026-0041",
-            client: "Stadtbibliothek München",
-            amount_cents: 485000,
-            due: "2026-08-15",
-            status: "paid",
-            days_late: 0,
-        },
-        Invoice {
-            number: "2026-0042",
-            client: "Landratsamt Starnberg",
-            amount_cents: 1240050,
-            due: "2026-08-28",
-            status: "sent",
-            days_late: 5,
-        },
-        Invoice {
-            number: "2026-0043",
-            client: "Caritas Berlin",
-            amount_cents: 99000,
-            due: "2026-09-10",
-            status: "draft",
-            days_late: 0,
-        },
-    ]
+/// Seeds an in-memory SQLite database and reads the rows back out.
+///
+/// Same three invoices as the fixture it replaces — the zero-diff test has to
+/// keep passing, so the data must be identical. What changed is where it comes
+/// from and, crucially, that getting it is now `async`.
+pub async fn rows() -> Vec<Invoice> {
+    let mut db = toasty::Db::builder()
+        .models(toasty::models!(crate::invoices::Invoice))
+        .connect("sqlite::memory:")
+        .await
+        .expect("connect");
+    db.push_schema().await.expect("schema");
+
+    for (number, client, cents, due, status, late) in [
+        (
+            "2026-0041",
+            "Stadtbibliothek München",
+            485000i64,
+            "2026-08-15",
+            "paid",
+            0i64,
+        ),
+        (
+            "2026-0042",
+            "Landratsamt Starnberg",
+            1240050,
+            "2026-08-28",
+            "sent",
+            5,
+        ),
+        (
+            "2026-0043",
+            "Caritas Berlin",
+            99000,
+            "2026-09-10",
+            "draft",
+            0,
+        ),
+    ] {
+        toasty::create!(Invoice {
+            number: number,
+            client: client,
+            amount_cents: cents,
+            due: due,
+            status: status,
+            days_late: late,
+        })
+        .exec(&mut db)
+        .await
+        .expect("seed");
+    }
+
+    Invoice::all().exec(&mut db).await.expect("query")
 }
 
 /// de-DE: `4.850,00 €`  ·  en-US: `$4,850.00`
@@ -80,7 +114,7 @@ pub fn money(locale: Locale, cents: i64) -> String {
     }
 }
 
-fn late_label(locale: Locale, days: i32) -> String {
+fn late_label(locale: Locale, days: i64) -> String {
     if days <= 0 {
         return "—".to_string();
     }
