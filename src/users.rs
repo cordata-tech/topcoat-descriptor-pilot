@@ -3,7 +3,7 @@
 //! The zero-diff test needs a screen that already works before a second one is
 //! added. This is it. Do not add the second screen until this one is trusted.
 
-use crate::descriptor::{col, CellKind, TableDescriptor};
+use crate::descriptor::{CellKind, TableDescriptor, col};
 
 pub struct User {
     pub name: &'static str,
@@ -17,11 +17,11 @@ pub fn users() -> TableDescriptor<User> {
     TableDescriptor {
         title: "Users",
         columns: vec![
-            col("Name",   CellKind::Text,   |u: &User| u.name.to_string()),
-            col("Email",  CellKind::Text,   |u: &User| u.email.to_string()),
-            col("Seats",  CellKind::Number, |u: &User| u.seats.to_string()),
-            col("Joined", CellKind::Date,   |u: &User| u.joined.to_string()),
-            col("Status", CellKind::Badge,  |u: &User| u.status.to_string()),
+            col("Name", CellKind::Text, |u: &User| u.name.to_string()),
+            col("Email", CellKind::Text, |u: &User| u.email.to_string()),
+            col("Seats", CellKind::Number, |u: &User| u.seats.to_string()),
+            col("Joined", CellKind::Date, |u: &User| u.joined.to_string()),
+            col("Status", CellKind::Badge, |u: &User| u.status.to_string()),
         ],
     }
 }

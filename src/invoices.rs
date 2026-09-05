@@ -8,7 +8,7 @@
 //! closures now, so they capture the locale directly — see `Accessor` in
 //! `descriptor.rs` for what that cost.
 
-use crate::descriptor::{col, CellKind, TableDescriptor};
+use crate::descriptor::{CellKind, TableDescriptor, col};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Locale {
@@ -27,9 +27,30 @@ pub struct Invoice {
 
 pub fn rows() -> Vec<Invoice> {
     vec![
-        Invoice { number: "2026-0041", client: "Stadtbibliothek München", amount_cents: 4_850_00,  due: "2026-08-15", status: "paid",  days_late: 0 },
-        Invoice { number: "2026-0042", client: "Landratsamt Starnberg",   amount_cents: 12_400_50, due: "2026-08-28", status: "sent",  days_late: 5 },
-        Invoice { number: "2026-0043", client: "Caritas Berlin",          amount_cents: 990_00,    due: "2026-09-10", status: "draft", days_late: 0 },
+        Invoice {
+            number: "2026-0041",
+            client: "Stadtbibliothek München",
+            amount_cents: 485000,
+            due: "2026-08-15",
+            status: "paid",
+            days_late: 0,
+        },
+        Invoice {
+            number: "2026-0042",
+            client: "Landratsamt Starnberg",
+            amount_cents: 1240050,
+            due: "2026-08-28",
+            status: "sent",
+            days_late: 5,
+        },
+        Invoice {
+            number: "2026-0043",
+            client: "Caritas Berlin",
+            amount_cents: 99000,
+            due: "2026-09-10",
+            status: "draft",
+            days_late: 0,
+        },
     ]
 }
 
@@ -75,14 +96,36 @@ pub fn descriptor(l: Locale) -> TableDescriptor<Invoice> {
         title: if de { "Rechnungen" } else { "Invoices" },
         columns: vec![
             // The locale is captured here — the thing an `fn` pointer could not do.
-            col(if de { "Nummer" } else { "Number" },
-                CellKind::Link { href: Box::new(|i: &Invoice| format!("/invoices/{}", i.number)) },
-                |i: &Invoice| i.number.to_string()),
-            col(if de { "Kunde" } else { "Client" },  CellKind::Text,   |i: &Invoice| i.client.to_string()),
-            col(if de { "Betrag" } else { "Amount" }, CellKind::Number, move |i: &Invoice| money(l, i.amount_cents)),
-            col(if de { "Fällig" } else { "Due" },    CellKind::Date,   |i: &Invoice| i.due.to_string()),
-            col("Status",                             CellKind::Badge,  |i: &Invoice| i.status.to_string()),
-            col(if de { "Verzug" } else { "Late" },   CellKind::Number, move |i: &Invoice| late_label(l, i.days_late)),
+            col(
+                if de { "Nummer" } else { "Number" },
+                CellKind::Link {
+                    href: Box::new(|i: &Invoice| format!("/invoices/{}", i.number)),
+                },
+                |i: &Invoice| i.number.to_string(),
+            ),
+            col(
+                if de { "Kunde" } else { "Client" },
+                CellKind::Text,
+                |i: &Invoice| i.client.to_string(),
+            ),
+            col(
+                if de { "Betrag" } else { "Amount" },
+                CellKind::Number,
+                move |i: &Invoice| money(l, i.amount_cents),
+            ),
+            col(
+                if de { "Fällig" } else { "Due" },
+                CellKind::Date,
+                |i: &Invoice| i.due.to_string(),
+            ),
+            col("Status", CellKind::Badge, |i: &Invoice| {
+                i.status.to_string()
+            }),
+            col(
+                if de { "Verzug" } else { "Late" },
+                CellKind::Number,
+                move |i: &Invoice| late_label(l, i.days_late),
+            ),
         ],
     }
 }

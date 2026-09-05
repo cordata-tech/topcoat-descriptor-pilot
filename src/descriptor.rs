@@ -35,7 +35,9 @@ pub enum CellKind<T: 'static> {
     Date,
     Badge,
     /// An anchor. The href is computed from the row exactly as the label is.
-    Link { href: Accessor<T> },
+    Link {
+        href: Accessor<T>,
+    },
 }
 
 /// **This type is the whole finding.**
@@ -84,5 +86,9 @@ pub fn col<T: 'static>(
     kind: CellKind<T>,
     get: impl Fn(&T) -> String + Send + Sync + 'static,
 ) -> Column<T> {
-    Column { header, kind, get: Box::new(get) }
+    Column {
+        header,
+        kind,
+        get: Box::new(get),
+    }
 }

@@ -7,8 +7,8 @@
 
 use crate::descriptor::{CellKind, TableDescriptor};
 use topcoat::{
-    view::{component, view},
     Result,
+    view::{component, view},
 };
 
 fn cell_class<T: 'static>(kind: &CellKind<T>) -> &'static str {

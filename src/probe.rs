@@ -8,8 +8,8 @@
 #![allow(dead_code, unused_imports)]
 
 use topcoat::{
-    view::{component, view},
     Result,
+    view::{component, view},
 };
 
 // ── P1 — a value that isn't Send ────────────────────────────────────────
