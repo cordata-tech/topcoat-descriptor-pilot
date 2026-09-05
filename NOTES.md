@@ -303,7 +303,7 @@ confidently wrong because a step upstream silently did not happen.
 |---|---|---|---|
 | P1 `Rc` | your `view!` line | **no — wrong cause** | probe was mis-designed, see below |
 | P2 borrow escapes | — | — | **compiled. No error at all** |
-| P3 `$()` server-only | the exact `$(…)` span | partly — in framework vocabulary | the seam |
+| P3 `$()` server-only | the exact `$(…)` span | partly — in framework vocabulary | where the abstraction shows |
 | P4 malformed markup | the exact closing tag | **yes, plainly** | the best of the five |
 | P5 not displayable | your line **and** the struct definition | yes | good |
 

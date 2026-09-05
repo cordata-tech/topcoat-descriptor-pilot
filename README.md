@@ -58,9 +58,9 @@ afterwards. It records what has *not* been tested as carefully as what has.
 
 ## Why this exists
 
-The Topcoat intro post promised a follow-up reporting where the seams actually
-show. That post cannot be written from the announcement, and it cannot be
-written from imagination — so this gets built first. Tracked on
+The Topcoat intro post promised a follow-up reporting where the rough edges
+actually show. That post cannot be written from the announcement, and it
+cannot be written from imagination — so this gets built first. Tracked on
 [cordata-tech/platform#34](https://github.com/cordata-tech/platform/issues/34).
 
 Versions pinned at the start: `topcoat` 0.6.2, `toasty` 0.10.0.

@@ -95,7 +95,7 @@ pub async fn probe() -> Result {
 *Why it matters:* **this is the most interesting probe.** The `$()` trick is
 Topcoat's headline feature, and its whole risk is a boundary the type system
 has to police. If this error is good, the feature is safe to use. If it points
-into generated JS glue, that's the seam the post is about.
+into generated JS glue, that's the leak the post is about.
 
 ### P4 — malformed markup
 
